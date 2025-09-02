@@ -8,6 +8,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.empresa import Empresa
 
@@ -30,23 +31,23 @@ def ingest_pdf():
     doc = PyPDFLoader(str(current_dir / PDF_PATH))
     file = doc.load()
 
-    emb_doc = []
-    for c in file:
-        for line in c.page_content.split("\n"):
-            match = padrao.match(line)
-            if match:
-                descricao,_, valor, ano  = match.groups()
-                empresa = Empresa(
-                    nome=descricao,
-                    faturamento="R$ " + valor,
-                    ano_fundacao=int(ano),
-                )
-                #print(f"Faturamento da empresa: {empresa.nome}")
-                emb_doc.append(Document(page_content=json.dumps(empresa.__dict__, ensure_ascii=False, indent=2)))
-            else:
-                print(f"Não foi possível fazer o parse da linha: {line}")
+    splits = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=150, add_start_index=False).split_documents(file)
+    if not splits:
+        raise SystemExit(0)
 
-    store.add_documents(documents=emb_doc)
+    enriched = [
+        Document(
+            page_content=d.page_content,
+            metadata={k: v for k, v in d.metadata.items() if v not in ("", None)}
+        )
+        for d in splits
+    ]
+
+    ids = [f"doc-{i}" for i in range(len(enriched))]
+
+    store.add_documents(documents=enriched, ids=ids)
 
 
 if __name__ == "__main__":
