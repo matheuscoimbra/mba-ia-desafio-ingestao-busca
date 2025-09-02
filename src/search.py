@@ -1,3 +1,12 @@
+import os
+
+from dotenv import load_dotenv
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_postgres import PGVector
+load_dotenv()
+
 PROMPT_TEMPLATE = """
 CONTEXTO:
 {contexto}
@@ -25,5 +34,35 @@ PERGUNTA DO USUÁRIO:
 RESPONDA A "PERGUNTA DO USUÁRIO"
 """
 
-def search_prompt(question=None):
-    pass
+model = ChatOpenAI(model="gpt-5-mini", temperature=0.1)
+
+embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_MODEL","text-embedding-3-small"))
+
+store = PGVector(
+    embeddings=embeddings,
+    collection_name=os.getenv("PG_VECTOR_COLLECTION_NAME"),
+    connection=os.getenv("DATABASE_URL"),
+    use_jsonb=True,
+)
+
+
+def transform_results(results)->str:
+    return f"\n-".join(k.page_content for k, v in results)
+
+
+def search_prompt(pergunta=None):
+    results = store.similarity_search_with_score(pergunta, k=10)
+
+    result_list_format = transform_results(results)
+
+
+    template = PromptTemplate(
+         input_variables=["contexto", "pergunta"],
+         template=PROMPT_TEMPLATE
+    )
+
+    #print(template.format(contexto=result_list_format, pergunta=pergunta))
+    pipeline = template | model | StrOutputParser()
+    result = pipeline.invoke({"contexto": result_list_format, "pergunta": pergunta})
+    return result
+

@@ -27,8 +27,29 @@ store = PGVector(
 )
 
 
+def ingest_pdf2():
+    doc = PyPDFLoader(str(current_dir.parent / PDF_PATH))
+    file = doc.load()
+
+    emb_doc = []
+    for c in file:
+        for line in c.page_content.split("\n"):
+            match = padrao.match(line)
+            if match:
+                descricao,_, valor, ano  = match.groups()
+                empresa = Empresa(
+                    nome=descricao,
+                    faturamento="R$ " + valor,
+                    ano_fundacao=int(ano),
+                )
+                emb_doc.append(Document(page_content=json.dumps(empresa.__dict__, ensure_ascii=False, indent=2)))
+            else:
+                print(f"Não foi possível fazer o parse da linha: {line}")
+
+    store.add_documents(documents=emb_doc)
+
 def ingest_pdf():
-    doc = PyPDFLoader(str(current_dir / PDF_PATH))
+    doc = PyPDFLoader(str(current_dir.parent / PDF_PATH))
     file = doc.load()
 
     splits = RecursiveCharacterTextSplitter(
